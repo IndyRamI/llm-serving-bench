@@ -1,0 +1,67 @@
+# EC2NodeClass for g5 (A10G GPU) nodes.
+# NOTE: replace REPLACE_ME_NODE_ROLE_NAME with the terraform output
+# `karpenter_node_iam_role_name` (run: terraform output -raw karpenter_node_iam_role_name),
+# and REPLACE_ME_CLUSTER_NAME with your cluster_name variable.
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: g5-gpu
+spec:
+  amiFamily: AL2 # EKS-optimized accelerated AMI (includes NVIDIA drivers)
+  role: REPLACE_ME_NODE_ROLE_NAME
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: REPLACE_ME_CLUSTER_NAME
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: REPLACE_ME_CLUSTER_NAME
+  amiSelectorTerms:
+    - alias: al2@latest # Karpenter resolves this to the latest EKS-optimized AL2 GPU AMI for accelerated instance types
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 100Gi
+        volumeType: gp3
+        deleteOnTermination: true
+  tags:
+    karpenter.sh/discovery: REPLACE_ME_CLUSTER_NAME
+    hardware-pool: g5-a10g
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: g5-gpu
+spec:
+  template:
+    metadata:
+      labels:
+        hardware-pool: g5-a10g
+        bench.io/gpu-family: g5
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: g5-gpu
+      requirements:
+        - key: karpenter.k8s.aws/instance-family
+          operator: In
+          values: ["g5"]
+        - key: karpenter.k8s.aws/instance-size
+          operator: In
+          values: ["xlarge", "2xlarge"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+      taints:
+        - key: nvidia.com/gpu
+          value: "true"
+          effect: NoSchedule
+      expireAfter: 12h # force periodic node recycling; safety net against forgotten benchmark nodes
+  limits:
+    cpu: "64" # hard cap on total vCPUs Karpenter can provision for this pool at once
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 5m

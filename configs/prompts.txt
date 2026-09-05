@@ -1,0 +1,10 @@
+Explain the difference between TCP and UDP in two sentences.
+Write a haiku about distributed systems.
+Summarize the plot of Romeo and Juliet in one paragraph.
+What are the tradeoffs between REST and gRPC?
+Give three tips for writing clean Python code.
+Describe how a hash table works.
+What is the CAP theorem?
+Write a short product description for a smart water bottle.
+Explain gradient descent to a high school student.
+List five common HTTP status codes and what they mean.

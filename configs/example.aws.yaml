@@ -1,0 +1,25 @@
+# AWS/EKS config — compares vLLM serving the same model across GPU hardware.
+# Reach each service via `kubectl port-forward` (see scripts/port_forward.sh)
+# before running, or run this same config from inside the cluster as a Job
+# (k8s/bench-job.yaml) using the in-cluster Service DNS names instead of
+# 127.0.0.1 (e.g. http://vllm-g5.default.svc.cluster.local:8000).
+prompts_file: configs/prompts.txt
+
+targets:
+  - name: llama3-8b-g5
+    base_url: http://127.0.0.1:8001   # port-forward svc/vllm-g5 8001:8000
+    model: meta-llama/Meta-Llama-3-8B-Instruct
+    hardware_label: g5.xlarge (A10G 24GB)
+
+  - name: llama3-8b-inf2
+    base_url: http://127.0.0.1:8002   # port-forward svc/vllm-inf2 8002:8000
+    model: meta-llama/Meta-Llama-3-8B-Instruct
+    hardware_label: inf2.xlarge (Inferentia2)
+
+load:
+  concurrency_levels: [1, 4, 8, 16, 32]
+  requests_per_level: 40
+  max_tokens: 256
+  temperature: 0.0
+  request_timeout_s: 120
+  warmup_requests: 5

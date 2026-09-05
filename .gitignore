@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+results/
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/tfplan
+k8s/vllm/hf-token-secret.yaml

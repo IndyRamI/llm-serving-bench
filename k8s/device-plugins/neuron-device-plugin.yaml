@@ -1,0 +1,39 @@
+# AWS Neuron k8s device plugin, restricted to Karpenter-provisioned inf2 nodes.
+# VERIFY the image tag against the current AWS Neuron SDK release you're targeting:
+# https://github.com/aws-neuron/aws-neuron-sdk (k8s-neuron-device-plugin)
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: neuron-device-plugin-daemonset
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: neuron-device-plugin-ds
+  template:
+    metadata:
+      labels:
+        name: neuron-device-plugin-ds
+    spec:
+      nodeSelector:
+        bench.io/gpu-family: inf2
+      tolerations:
+        - key: aws.amazon.com/neuron
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      priorityClassName: system-node-critical
+      containers:
+        - image: public.ecr.aws/neuron/neuron-device-plugin:2.19.16.0
+          name: neuron-device-plugin-ctr
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins

@@ -1,0 +1,26 @@
+# Runs the harness in-cluster against vLLM Services directly.
+# Build/push the image first (see scripts/build_and_push_bench_image.sh),
+# then: kubectl apply -f k8s/bench-job.yaml
+#       kubectl logs -f job/llm-bench
+#       kubectl cp <pod>:/app/results ./results   # to pull results locally
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llm-bench
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: llm-bench
+          image: REPLACE_ME_ECR_REPO/llm-serving-bench:latest
+          args:
+            - --config=configs/example.incluster.yaml
+            - --out=/app/results/run
+          volumeMounts:
+            - name: results
+              mountPath: /app/results
+      volumes:
+        - name: results
+          emptyDir: {}

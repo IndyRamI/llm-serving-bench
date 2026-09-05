@@ -1,0 +1,73 @@
+# vLLM serving on g5 (A10G). Scheduled onto Karpenter's g5-gpu NodePool.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-g5
+  labels:
+    app: vllm-g5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-g5
+  template:
+    metadata:
+      labels:
+        app: vllm-g5
+    spec:
+      nodeSelector:
+        bench.io/gpu-family: g5
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.6.3
+          args:
+            - --model=meta-llama/Meta-Llama-3-8B-Instruct
+            - --served-model-name=meta-llama/Meta-Llama-3-8B-Instruct
+            - --max-model-len=8192
+            - --gpu-memory-utilization=0.90
+          ports:
+            - containerPort: 8000
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              nvidia.com/gpu: "1"
+              cpu: "2"
+              memory: 16Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 30
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+      volumes:
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 80Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-g5
+spec:
+  selector:
+    app: vllm-g5
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

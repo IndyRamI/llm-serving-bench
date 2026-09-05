@@ -1,0 +1,82 @@
+# vLLM serving on inf2 (Inferentia2) via the Neuron backend.
+#
+# CAVEAT: unlike deployment-g5.yaml, this is NOT a drop-in vllm/vllm-openai
+# image. You must build a vLLM image from the vLLM repo's Dockerfile.neuron
+# (or use an AWS-provided Neuron LLM inference container if one matches your
+# vLLM version) with a compatible transformers-neuronx/neuronx-distributed
+# version, push it to your own ECR repo, and reference it below. Model
+# weights also typically need AOT compilation for Neuron ahead of serving.
+# Treat this manifest as a scaffold to adapt, not a tested config.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-inf2
+  labels:
+    app: vllm-inf2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-inf2
+  template:
+    metadata:
+      labels:
+        app: vllm-inf2
+    spec:
+      nodeSelector:
+        bench.io/gpu-family: inf2
+      tolerations:
+        - key: aws.amazon.com/neuron
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: vllm-neuron
+          image: REPLACE_ME_ECR_REPO/vllm-neuron:latest # build from vLLM's Dockerfile.neuron
+          args:
+            - --model=meta-llama/Meta-Llama-3-8B-Instruct
+            - --served-model-name=meta-llama/Meta-Llama-3-8B-Instruct
+            - --device=neuron
+            - --max-model-len=8192
+            - --tensor-parallel-size=2
+          ports:
+            - containerPort: 8000
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            limits:
+              aws.amazon.com/neuron: "1"
+            requests:
+              aws.amazon.com/neuron: "1"
+              cpu: "2"
+              memory: 16Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            failureThreshold: 30
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+      volumes:
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 80Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-inf2
+spec:
+  selector:
+    app: vllm-inf2
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

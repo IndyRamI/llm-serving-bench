@@ -1,0 +1,17 @@
+# Local validation config — points at mock_server.py, not real hardware.
+# Use this to sanity-check the harness before running against AWS.
+prompts_file: configs/prompts.txt
+
+targets:
+  - name: mock-cpu
+    base_url: http://127.0.0.1:8000
+    model: mock-model
+    hardware_label: local-mock
+
+load:
+  concurrency_levels: [1, 4, 8]
+  requests_per_level: 20
+  max_tokens: 64
+  temperature: 0.0
+  request_timeout_s: 60
+  warmup_requests: 2
