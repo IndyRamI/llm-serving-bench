@@ -4,6 +4,117 @@ An end-to-end harness for benchmarking LLM serving performance across
 different models and hardware, plus the AWS infrastructure (EKS + Karpenter)
 to actually stand up GPU/Neuron nodes to test against.
 
+## Fresh machine setup (e.g. a new laptop)
+
+Repo: https://github.com/IndyRamI/llm-serving-bench
+
+### 1. Install prerequisites
+
+macOS (Homebrew):
+
+```bash
+brew install git python3 terraform hashicorp/tap/terraform kubectl awscli gh
+```
+
+- `python3` — 3.11+ recommended, used for the harness and mock server
+- `terraform` — provisions EKS/Karpenter (Terraform installs are gated behind
+  the `hashicorp/tap`, hence both lines above; the second is the one that
+  actually wins)
+- `kubectl` — talks to the cluster once it exists
+- `awscli` — AWS auth + `aws eks update-kubeconfig`
+- `gh` — only needed if you want to clone/push via `gh` instead of plain git
+
+Docker is only required if you plan to build/push the in-cluster benchmark
+image (`scripts/build_and_push_bench_image.sh`) — not needed for the
+port-forward workflow.
+
+### 2. Clone the repo
+
+```bash
+git clone https://github.com/IndyRamI/llm-serving-bench.git
+cd llm-serving-bench
+```
+
+### 3. Set up the Python environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 4. Sanity-check the harness locally (no AWS, no cost)
+
+```bash
+uvicorn mock_server:app --port 8000 &
+python cli.py --config configs/example.local.yaml
+```
+
+You should see a results table printed and `results/<timestamp>/` written
+with `summary.csv`/`summary.md`. Kill the mock server when done:
+`kill %1` (or `pkill -f "uvicorn mock_server"`).
+
+### 5. Authenticate to AWS
+
+Pick whichever matches how this AWS account is normally accessed:
+
+```bash
+aws configure                 # long-lived access key + secret
+# or
+aws sso login --profile <profile-name>   # if using AWS SSO
+```
+
+Verify it worked:
+
+```bash
+aws sts get-caller-identity
+```
+
+Confirm the account/region has **g5** (and, if pursuing it, **inf2**)
+instance quota — check the EC2 "Service Quotas" console for "Running
+On-Demand G and VT instances" / "Running On-Demand Inf instances" in the
+region you're deploying to (default `us-east-1`, set in
+`terraform/variables.tf`).
+
+### 6. Provision AWS infra (costs money from this point on)
+
+```bash
+./scripts/deploy_infra.sh
+```
+
+This runs `terraform init`/`plan` and asks you to confirm before `apply`.
+Review the plan carefully — it creates a VPC, an EKS cluster, a small
+always-on managed node group, and the Karpenter controller.
+
+```bash
+aws eks update-kubeconfig --region us-east-1 --name llm-serving-bench
+./scripts/deploy_karpenter_resources.sh
+```
+
+The second command applies the g5 `NodePool`/`EC2NodeClass` and the NVIDIA
+device plugin. It prints (but does not apply) the inf2 equivalents — review
+the caveats in `k8s/karpenter/ec2nodeclass-inf2.yaml` before applying those.
+
+### 7. Deploy vLLM and run a real benchmark
+
+```bash
+cp k8s/vllm/hf-token-secret.example.yaml k8s/vllm/hf-token-secret.yaml
+# edit hf-token-secret.yaml with your real Hugging Face token
+kubectl apply -f k8s/vllm/hf-token-secret.yaml
+kubectl apply -f k8s/vllm/deployment-g5.yaml
+kubectl rollout status deployment/vllm-g5    # slow the first time (model download)
+
+./scripts/port_forward.sh &
+python cli.py --config configs/example.aws.yaml --out results/aws-run
+```
+
+### 8. Tear down when finished (stop paying for it)
+
+```bash
+kubectl delete -f k8s/vllm/deployment-g5.yaml -f k8s/vllm/deployment-inf2-neuron.yaml --ignore-not-found
+cd terraform && terraform destroy
+```
+
 ## Components
 
 - **`bench/`** — the benchmarking harness itself (Python, asyncio + httpx).
